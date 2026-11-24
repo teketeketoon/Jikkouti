@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>プロセカ 実効値計算機</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#eef4f6; --surface:#ffffff; --ink:#16303a; --muted:#5d7580; --line:#d3e1e6;
+  --accent:#17a592; --accent-ink:#ffffff; --leader:#e8567a; --soft:#e3f5f2;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1a1f; --surface:#17252c; --ink:#e6f1f4; --muted:#93acb6; --line:#2a3d46;
+    --accent:#3cc9b4; --accent-ink:#06211d; --leader:#ff7a9a; --soft:#173b38;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1a1f; --surface:#17252c; --ink:#e6f1f4; --muted:#93acb6; --line:#2a3d46;
+  --accent:#3cc9b4; --accent-ink:#06211d; --leader:#ff7a9a; --soft:#173b38;
+  color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;line-height:1.6}
+main{max-width:520px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.35rem;font-weight:900;margin:4px 0 4px}
+.lead{margin:0 0 20px;color:var(--muted);font-size:.9rem}
+.result{background:var(--accent);color:var(--accent-ink);border-radius:20px;padding:20px 22px;margin-bottom:20px}
+.result .big{font-size:3.4rem;font-weight:900;line-height:1.1;letter-spacing:-.02em}
+.result .big small{font-size:1.4rem;font-weight:700;margin-left:2px}
+.result .label{font-size:.9rem;font-weight:700;opacity:.85}
+.result .sub{display:flex;gap:24px;margin-top:12px;font-weight:700}
+.result .sub span{display:block;font-size:.78rem;opacity:.8;font-weight:500}
+.slots{display:grid;gap:10px;margin:0 0 20px;padding:0;list-style:none}
+.slot{display:flex;align-items:center;gap:12px;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:10px 14px}
+.slot.leader{border-color:var(--leader);border-width:2px}
+.slot .name{flex:1;font-weight:700}
+.slot .name em{display:block;font-style:normal;font-weight:500;font-size:.78rem;color:var(--muted)}
+.slot.leader .name em{color:var(--leader)}
+.field{display:flex;align-items:baseline;gap:4px}
+input[type=text]{width:5.2rem;font:inherit;font-weight:700;font-size:1.2rem;text-align:right;color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:6px 10px}
+input[type=text]:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
+.chips button{font:inherit;font-size:.85rem;font-weight:700;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:999px;padding:4px 12px;cursor:pointer}
+.chips button:active{background:var(--soft)}
+.hint{font-size:.8rem;color:var(--muted);margin:0 0 20px}
+.panel{background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:20px}
+.panel h2{font-size:1rem;margin:0 0 10px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.out{font-weight:900;font-size:1.1rem;color:var(--accent)}
+.note{font-size:.8rem;color:var(--muted)}
+.note p{margin:0 0 6px}
+</style>
+</head>
+<body>
+<main>
+  <h1>プロセカ 実効値計算機</h1>
+  <p class="lead">各枠のスコアUP値(%)を入れると、実効値と内部値がわかります。</p>
+
+  <section class="result" aria-live="polite">
+    <div class="label">実効値</div>
+    <div class="big"><span id="eff">0</span><small>%</small></div>
+    <div class="sub">
+      <div><span>内部値</span><b id="int">0</b></div>
+      <div><span>リーダー分</span><b id="lead">0</b>%</div>
+      <div><span>サブ4枠分</span><b id="subs">0</b>%</div>
+    </div>
+  </section>
+
+  <div class="chips" id="chips" aria-label="よく使う値(選択中の枠に入力)"></div>
+  <p class="hint">値を押すと、選択中の枠に入力されます。</p>
+
+  <ul class="slots" id="slots"></ul>
+
+  <section class="panel">
+    <h2>目標の実効値から逆算</h2>
+    <div class="row">
+      <label for="target">目標の実効値(%)</label>
+      <input type="text" id="target" inputmode="decimal" autocomplete="off" value="250">
+    </div>
+    <div class="row"><span>必要なサブ4枠の合計</span><span class="out" id="needSum">-</span></div>
+    <div class="row"><span>サブ1枠あたりの平均</span><span class="out" id="needAvg">-</span></div>
+    <div class="note" id="needMsg"></div>
+  </section>
+
+  <section class="note">
+    <p>実効値 = リーダーのスコアUP値 + サブ4枠のスコアUP値の合計 ÷ 5</p>
+    <p>内部値 = 5枠のスコアUP値の合計</p>
+    <p>ブルフェスなど、他のカードのスキルを参照するスキルは、実際に発動する値(基本値 + 参照分)を入力してください。回復・判定強化の効果は含みません。</p>
+  </section>
+</main>
+
+<script>
+(function(){
+  var NAMES = ["リーダー","サブ1","サブ2","サブ3","サブ4"];
+  var PRESETS = [60,80,100,110,120,130,140,150,160];
+  var DEFAULTS = [100,100,100,100,100];
+  var vals = DEFAULTS.slice();
+  function bindCaretEnd(el, onFocus){
+    var fresh = false;
+    function toEnd(){ var l = el.value.length; try{ el.setSelectionRange(l,l); }catch(e){} }
+    el.addEventListener("focus", function(){ fresh = true; if(onFocus) onFocus(); setTimeout(toEnd,0); });
+    el.addEventListener("pointerup", function(){ if(fresh){ fresh = false; setTimeout(toEnd,0); } });
+  }
+  var selected = 0;
+  var slotsEl = document.getElementById("slots");
+  var inputs = [];
+
+  NAMES.forEach(function(n,i){
+    var li = document.createElement("li");
+    li.className = "slot" + (i===0 ? " leader" : "");
+    var name = document.createElement("div");
+    name.className = "name";
+    name.innerHTML = n + "<em>" + (i===0 ? "そのまま反映" : "1/5だけ反映") + "</em>";
+    var field = document.createElement("div");
+    field.className = "field";
+    var inp = document.createElement("input");
+    inp.type = "text"; inp.inputMode = "decimal"; inp.autocomplete = "off";
+    inp.value = vals[i];
+    inp.setAttribute("aria-label", n + "のスコアUP値");
+    bindCaretEnd(inp, function(){ selected = i; });
+    inp.addEventListener("input", function(){ vals[i] = parseFloat(inp.value) || 0; render(); });
+    inputs.push(inp);
+    field.appendChild(inp);
+    field.appendChild(document.createTextNode("%"));
+    li.appendChild(name); li.appendChild(field);
+    slotsEl.appendChild(li);
+  });
+
+  var chips = document.getElementById("chips");
+  PRESETS.forEach(function(p){
+    var b = document.createElement("button");
+    b.type = "button"; b.textContent = p;
+    b.addEventListener("click", function(){
+      vals[selected] = p; inputs[selected].value = p; render();
+    });
+    chips.appendChild(b);
+  });
+
+  var target = document.getElementById("target");
+  target.addEventListener("input", render);
+  bindCaretEnd(target);
+
+  function fmt(x){
+    var r = Math.round(x*100)/100;
+    return String(r);
+  }
+
+  function render(){
+    var leader = vals[0];
+    var subSum = vals[1]+vals[2]+vals[3]+vals[4];
+    var subPart = subSum/5;
+    document.getElementById("eff").textContent = fmt(leader + subPart);
+    document.getElementById("int").textContent = fmt(leader + subSum);
+    document.getElementById("lead").textContent = fmt(leader);
+    document.getElementById("subs").textContent = fmt(subPart);
+
+    var t = parseFloat(target.value);
+    var sumEl = document.getElementById("needSum");
+    var avgEl = document.getElementById("needAvg");
+    var msg = document.getElementById("needMsg");
+    if (isNaN(t)) { sumEl.textContent = "-"; avgEl.textContent = "-"; msg.textContent = ""; return; }
+    var need = (t - leader) * 5;
+    if (need <= 0) {
+      sumEl.textContent = "0%"; avgEl.textContent = "0%";
+      msg.textContent = "リーダーだけで目標に届いています。";
+    } else {
+      sumEl.textContent = fmt(need) + "%";
+      avgEl.textContent = fmt(need/4) + "%";
+      var diff = need - subSum;
+      msg.textContent = diff > 0
+        ? "現在のサブ合計より " + fmt(diff) + "% 足りません。"
+        : "現在の編成で目標を満たしています。";
+    }
+  }
+  render();
+})();
+</script>
+</body>
+</html>
